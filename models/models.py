@@ -346,30 +346,9 @@ class DeformSegmentationModule(SegmentationModuleBase):
             grid = nn.Upsample(size=self.input_size_net, mode='bilinear')(grid)
         # EXPLAIN: grid_y for downsampling label y, to handle segmentation architectures whose prediction are not same size with input x
         if segSize is None:# training
-            input_size = np.array(self.input_size_net)
-
-            input_size_list = [int(input_size[0]), int(input_size[1])]
-
-            res=[]
-            for i in range(0,len(input_size_list)):
-                res.append(input_size_list[i]//self.cfg.DATASET.segm_downsampling_rate)
-            
-            res=tuple(res)
-
-            grid_y = nn.Upsample(size=res, mode='bilinear')(grid)
+            grid_y = nn.Upsample(size=tuple(np.array(self.input_size_net)//self.cfg.DATASET.segm_downsampling_rate), mode='bilinear')(grid)
         else:# inference
-
-            input_size = np.array(self.input_size_net_infer)
-
-            input_size_list = [int(input_size[0]), int(input_size[1])]
-
-            # res=[]
-            # for i in range(0,len(input_size_list)):
-            #     res.append(input_size_list[i]//self.cfg.DATASET.segm_downsampling_rate)
-            
-            res=tuple(input_size_list)
-
-            grid_y = nn.Upsample(size=res, mode='bilinear')(grid)
+            grid_y = nn.Upsample(size=tuple(np.array(self.input_size_net_infer)), mode='bilinear')(grid)
 
         grid = torch.transpose(grid,1,2)
         grid = torch.transpose(grid,2,3)
@@ -1024,7 +1003,6 @@ class ModelBuilder:
         return net_encoder
 
     @staticmethod
-    #num_class=150
     def build_decoder(arch='upernet',
                       fc_dim=2048, num_class=150,
                       weights='', use_softmax=False):

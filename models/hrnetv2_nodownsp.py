@@ -438,7 +438,6 @@ class HRNetV2(nn.Module):
 
 
 def hrnetv2_nodownsp(pretrained=False, **kwargs):
-    #n_class=1000
     model = HRNetV2(n_class=1000, **kwargs)
     if pretrained:
         model.load_state_dict(load_url(model_urls['hrnetv2']), strict=False)

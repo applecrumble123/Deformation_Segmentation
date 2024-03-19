@@ -126,7 +126,7 @@ class BaseDataset(torch.utils.data.Dataset):
                 # gleason2019 322 train mean and std applied
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225])
-        elif 'cityscapes' in opt.root_dataset or 'CITYSCAPE' in opt.list_train:
+        elif 'CITYSCAPES' in opt.root_dataset or 'CITYSCAPE' in opt.list_train:
             # following HRNet-Semantic-Segmentation setting
             # but starting from 1 instead of 0, seems 0 leads to bug in criterion.OhemCrossEntropy implementation
             # debug note 24/12/19 seems label must start from 1 and must be continues, otherwise lead inconsistence between pred by view(-1) and seg_label

@@ -3,7 +3,7 @@ DATASET:
   list_train: "./data/Cityscape/training_list_2975.odgt"
   list_val: "./data/Cityscape/validation_list_500.odgt"
   grid_path: "./data/Cityscape/grid_1024_2048.png"
-  num_class: 30
+  num_class: 19
   imgSizes: (2048, )
   imgMaxSize: 2048
   padding_constant: 32
@@ -20,16 +20,14 @@ MODEL:
   rev_deform_interp: 'nearest'
 
 TRAIN:
-  batch_size_per_gpu: 1
+  batch_size_per_gpu: 2
   fov_location_step: 4
   auto_fov_location_step: False
   sync_location: 'mean_mbs'
   mini_batch_size: 2
-  #num_epoch: 125
-  num_epoch: 10
+  num_epoch: 125
   start_epoch: 0
-  epoch_iters: 200
-  #epoch_iters: 744
+  epoch_iters: 744
   optim: "adam"
   lr_encoder: 2e-5
   lr_decoder: 2e-5
@@ -42,7 +40,7 @@ TRAIN:
   fix_bn: False
   deform_zero_bound: True
   opt_deform_LabelEdge_softmax: False
-  workers: 4
+  workers: 16
   disp_iter: 20
   seed: 304
   save_checkpoint: True
