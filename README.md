@@ -3,7 +3,6 @@
 This is a PyTorch implementation of [Learning to Downsample for Segmentation of Ultra-High Resolution Images](https://lxasqjc.github.io/learn-downsample.github.io/) which published at [ICLR 2022](https://openreview.net/forum?id=HndgQudNb91).
 
 ## Citation
-If you use this code for your research, please cite our paper:
 
 ```
 @article{jin2021learning,
