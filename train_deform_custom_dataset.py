@@ -19,8 +19,8 @@ from torch.utils.tensorboard import SummaryWriter
 from scipy.stats import entropy
 # Our libs
 from config import cfg
-from dataset import TrainDataset #, ValDataset
-from models import ModelBuilder, DeformSegmentationModule
+from dataset_custom import TrainDataset #, ValDataset
+from models.models_segmentation_model import ModelBuilder, DeformSegmentationModule
 from utils import AverageMeter, parse_devices, setup_logger
 from lib.nn import UserScatteredDataParallel, user_scattered_collate, patch_replication_callback
 from eval import eval_during_train_deform
@@ -114,20 +114,36 @@ def train(segmentation_module, iterator, optimizers, epoch, cfg, history=None, f
         # calculate accuracy, and display
         if i % cfg.TRAIN.disp_iter == 0:
             if cfg.TRAIN.deform_joint_loss:
+                # print('Epoch: [{}][{}/{}], Time: {:.2f}, Data: {:.2f}, '
+                #       'lr_encoder: {:.6f}, lr_decoder: {:.6f}, '
+                #       'Accuracy: {:4.2f}, Seg_Loss: {:.6f}, Edge_Loss: {:.6f}'
+                #       .format(epoch, i, cfg.TRAIN.epoch_iters,
+                #               batch_time.average(), data_time.average(),
+                #               cfg.TRAIN.running_lr_encoder, cfg.TRAIN.running_lr_decoder,
+                #               ave_acc.average(), ave_total_loss.average(), ave_edge_loss.average()))
+                
                 print('Epoch: [{}][{}/{}], Time: {:.2f}, Data: {:.2f}, '
-                      'lr_encoder: {:.6f}, lr_decoder: {:.6f}, '
+                      'lr_segmentation_model: {:.6f}, '
                       'Accuracy: {:4.2f}, Seg_Loss: {:.6f}, Edge_Loss: {:.6f}'
                       .format(epoch, i, cfg.TRAIN.epoch_iters,
                               batch_time.average(), data_time.average(),
-                              cfg.TRAIN.running_lr_encoder, cfg.TRAIN.running_lr_decoder,
+                              cfg.TRAIN.running_lr_segmentation_model,
                               ave_acc.average(), ave_total_loss.average(), ave_edge_loss.average()))
             else:
+                # print('Epoch: [{}][{}/{}], Time: {:.2f}, Data: {:.2f}, '
+                #       'lr_encoder: {:.6f}, lr_decoder: {:.6f}, '
+                #       'Accuracy: {:4.2f}, Seg_Loss: {:.6f}'
+                #       .format(epoch, i, cfg.TRAIN.epoch_iters,
+                #               batch_time.average(), data_time.average(),
+                #               cfg.TRAIN.running_lr_encoder, cfg.TRAIN.running_lr_decoder,
+                #               ave_acc.average(), ave_total_loss.average()))
+                
                 print('Epoch: [{}][{}/{}], Time: {:.2f}, Data: {:.2f}, '
-                      'lr_encoder: {:.6f}, lr_decoder: {:.6f}, '
+                      'lr_segmentation_model: {:.6f}, '
                       'Accuracy: {:4.2f}, Seg_Loss: {:.6f}'
                       .format(epoch, i, cfg.TRAIN.epoch_iters,
                               batch_time.average(), data_time.average(),
-                              cfg.TRAIN.running_lr_encoder, cfg.TRAIN.running_lr_decoder,
+                              cfg.TRAIN.running_lr_segmentation_model,
                               ave_acc.average(), ave_total_loss.average()))
 
         fractional_epoch = epoch - 1 + 1. * i / cfg.TRAIN.epoch_iters
@@ -165,25 +181,38 @@ def checkpoint(nets, cfg, epoch):
 
 def checkpoint_last(nets, cfg, epoch):
     print('Saving checkpoints...')
-    (net_encoder, net_decoder, crit, net_saliency, net_compress) = nets
+    #(net_encoder, net_decoder, crit, net_saliency, net_compress) = nets
+    (segmentation_model, crit, net_saliency, net_compress) = nets
+
     dict_saliency = net_saliency.state_dict()
+    
     torch.save(
         dict_saliency,
         '{}/saliency_epoch_last.pth'.format(cfg.DIR))
+    
     dict_compress = net_compress.state_dict()
+    
     torch.save(
         dict_compress,
         '{}/compress_epoch_last.pth'.format(cfg.DIR))
 
 
-    dict_encoder = net_encoder.state_dict()
-    dict_decoder = net_decoder.state_dict()
+    # dict_encoder = net_encoder.state_dict()
+    # dict_decoder = net_decoder.state_dict()
+
+    # torch.save(
+    #     dict_encoder,
+    #     '{}/encoder_epoch_last.pth'.format(cfg.DIR))
+    # torch.save(
+    #     dict_decoder,
+    #     '{}/decoder_epoch_last.pth'.format(cfg.DIR))
+
+    dict_segmentation_model = segmentation_model.state_dict()
+
     torch.save(
-        dict_encoder,
-        '{}/encoder_epoch_last.pth'.format(cfg.DIR))
-    torch.save(
-        dict_decoder,
-        '{}/decoder_epoch_last.pth'.format(cfg.DIR))
+        dict_segmentation_model,
+        '{}/segmentation_model_epoch_last.pth'.format(cfg.DIR))
+   
 
 def checkpoint_history(history, cfg, epoch):
     print('Saving history...')
@@ -244,35 +273,61 @@ def group_weight(module):
 
 
 def create_optimizers(nets, cfg):
-    (net_encoder, net_decoder, crit, net_saliency, net_compress) = nets
+    #(net_encoder, net_decoder, crit, net_saliency, net_compress) = nets
+    (segmentation_model, crit, net_saliency, net_compress) = nets
 
+    # if cfg.TRAIN.optim.lower() == 'sgd':
+    #     optimizer = torch.optim.SGD([
+    #             {'params': net_encoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_encoder,'zoom':False},
+    #             {'params': net_decoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_decoder,'zoom':False},
+    #             {'params': net_saliency.parameters(),'lr_mult':cfg.TRAIN.lr_mult_saliency,'zoom':True},
+    #             {'params': net_compress.parameters(),'lr_mult':cfg.TRAIN.lr_mult_compress,'zoom':True}
+    #             ],lr =cfg.TRAIN.lr_encoder,momentum=cfg.TRAIN.beta1,weight_decay=cfg.TRAIN.weight_decay)
+    
     if cfg.TRAIN.optim.lower() == 'sgd':
         optimizer = torch.optim.SGD([
-                {'params': net_encoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_encoder,'zoom':False},
-                {'params': net_decoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_decoder,'zoom':False},
+                {'params': segmentation_model.parameters(),'lr_mult':cfg.TRAIN.lr_mult_segmentation_model,'zoom':False},
                 {'params': net_saliency.parameters(),'lr_mult':cfg.TRAIN.lr_mult_saliency,'zoom':True},
                 {'params': net_compress.parameters(),'lr_mult':cfg.TRAIN.lr_mult_compress,'zoom':True}
-                ],lr =cfg.TRAIN.lr_encoder,momentum=cfg.TRAIN.beta1,weight_decay=cfg.TRAIN.weight_decay)
+                ],lr =cfg.TRAIN.lr_segmentation_model,momentum=cfg.TRAIN.beta1,weight_decay=cfg.TRAIN.weight_decay)
 
+    # elif cfg.TRAIN.optim.lower() == 'adam':
+    #     optimizer_encoder = torch.optim.Adam(
+    #         [{'params': net_encoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_encoder,'zoom':False}],
+    #         lr=cfg.TRAIN.lr_encoder,
+    #         weight_decay=cfg.TRAIN.weight_decay)
+    #     optimizer_decoder = torch.optim.Adam(
+    #         [{'params': net_decoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_decoder,'zoom':False}],
+    #         lr=cfg.TRAIN.lr_encoder,
+    #         weight_decay=cfg.TRAIN.weight_decay)
+    #     optimizer_saliency = torch.optim.Adam(
+    #         [{'params': net_saliency.parameters(),'lr_mult':cfg.TRAIN.lr_mult_saliency,'zoom':True}],
+    #         lr=cfg.TRAIN.lr_encoder,
+    #         weight_decay=cfg.TRAIN.weight_decay)
+    #     optimizer_compress = torch.optim.Adam(
+    #         [{'params': net_compress.parameters(),'lr_mult':cfg.TRAIN.lr_mult_compress,'zoom':True}],
+    #         lr=cfg.TRAIN.lr_encoder,
+    #         weight_decay=cfg.TRAIN.weight_decay)
+    
     elif cfg.TRAIN.optim.lower() == 'adam':
-        optimizer_encoder = torch.optim.Adam(
-            [{'params': net_encoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_encoder,'zoom':False}],
-            lr=cfg.TRAIN.lr_encoder,
+        
+        optimizer_segmentation_model = torch.optim.Adam(
+            [{'params': segmentation_model.parameters(),'lr_mult':cfg.TRAIN.lr_mult_segmentation_model,'zoom':False}],
+            lr=cfg.TRAIN.lr_segmentation_model,
             weight_decay=cfg.TRAIN.weight_decay)
-        optimizer_decoder = torch.optim.Adam(
-            [{'params': net_decoder.parameters(),'lr_mult':cfg.TRAIN.lr_mult_decoder,'zoom':False}],
-            lr=cfg.TRAIN.lr_encoder,
-            weight_decay=cfg.TRAIN.weight_decay)
+        
         optimizer_saliency = torch.optim.Adam(
             [{'params': net_saliency.parameters(),'lr_mult':cfg.TRAIN.lr_mult_saliency,'zoom':True}],
             lr=cfg.TRAIN.lr_encoder,
             weight_decay=cfg.TRAIN.weight_decay)
+        
         optimizer_compress = torch.optim.Adam(
             [{'params': net_compress.parameters(),'lr_mult':cfg.TRAIN.lr_mult_compress,'zoom':True}],
             lr=cfg.TRAIN.lr_encoder,
             weight_decay=cfg.TRAIN.weight_decay)
 
-    return (optimizer_encoder, optimizer_decoder, optimizer_saliency, optimizer_compress)
+    #return (optimizer_encoder, optimizer_decoder, optimizer_saliency, optimizer_compress)
+    return (optimizer_segmentation_model, optimizer_saliency, optimizer_compress)
 
 
 def adjust_edge_loss_scale(cur_iter, cfg):
@@ -294,8 +349,10 @@ def adjust_learning_rate(optimizers, cur_iter, cfg, lr_mbs = False, f_max_iter=1
         print('original scale_running_lr: ', scale_running_lr)
         scale_running_lr *= lr_scale
         print('scaled scale_running_lr: ', scale_running_lr)
-    cfg.TRAIN.running_lr_encoder = cfg.TRAIN.lr_encoder * scale_running_lr
-    cfg.TRAIN.running_lr_decoder = cfg.TRAIN.lr_decoder * scale_running_lr
+    # cfg.TRAIN.running_lr_encoder = cfg.TRAIN.lr_encoder * scale_running_lr
+    # cfg.TRAIN.running_lr_decoder = cfg.TRAIN.lr_decoder * scale_running_lr
+    cfg.TRAIN.running_lr_segmentation_model = cfg.TRAIN.lr_segmentation_model * scale_running_lr
+ 
     if cfg.TRAIN.fov_scale_seg_only:
         scale_running_lr /= lr_scale
     cfg.TRAIN.running_lr_foveater = cfg.TRAIN.lr_foveater * scale_running_lr
@@ -399,16 +456,17 @@ def main(cfg, gpus):
                 crit = nn.CrossEntropyLoss(ignore_index=-2)
 
     ###============== Network Builders ===========###
-    net_encoder = ModelBuilder.build_encoder(
-        arch=cfg.MODEL.arch_encoder.lower(),
-        fc_dim=cfg.MODEL.fc_dim,
-        weights=cfg.MODEL.weights_encoder,
-        dilate_rate=cfg.DATASET.segm_downsampling_rate)
-    net_decoder = ModelBuilder.build_decoder(
-        arch=cfg.MODEL.arch_decoder.lower(),
-        fc_dim=cfg.MODEL.fc_dim,
-        num_class=cfg.DATASET.num_class,
-        weights=cfg.MODEL.weights_decoder)
+    # net_encoder = ModelBuilder.build_encoder(
+    #     arch=cfg.MODEL.arch_encoder.lower(),
+    #     fc_dim=cfg.MODEL.fc_dim,
+    #     weights=cfg.MODEL.weights_encoder,
+    #     dilate_rate=cfg.DATASET.segm_downsampling_rate)
+    # net_decoder = ModelBuilder.build_decoder(
+    #     arch=cfg.MODEL.arch_decoder.lower(),
+    #     fc_dim=cfg.MODEL.fc_dim,
+    #     num_class=cfg.DATASET.num_class,
+    #     weights=cfg.MODEL.weights_decoder)
+    segmentation_model = ModelBuilder.build_model(num_class=cfg.DATASET.num_class)
     net_saliency = ModelBuilder.build_net_saliency(
         cfg=cfg,
         weights=cfg.MODEL.weights_net_saliency)
@@ -416,15 +474,18 @@ def main(cfg, gpus):
         cfg=cfg,
         weights=cfg.MODEL.weights_net_compress)
     if cfg.MODEL.arch_decoder.endswith('deepsup'):
-        segmentation_module = DeformSegmentationModule(net_encoder, net_decoder, net_saliency, net_compress, crit, cfg, deep_sup_scale=cfg.TRAIN.deep_sup_scale)
+        # segmentation_module = DeformSegmentationModule(net_encoder, net_decoder, net_saliency, net_compress, crit, cfg, deep_sup_scale=cfg.TRAIN.deep_sup_scale)
+        segmentation_module = DeformSegmentationModule(segmentation_model, net_saliency, net_compress, crit, cfg, deep_sup_scale=cfg.TRAIN.deep_sup_scale)
     else:
-        segmentation_module = DeformSegmentationModule(net_encoder, net_decoder, net_saliency, net_compress, crit, cfg)
+        #segmentation_module = DeformSegmentationModule(net_encoder, net_decoder, net_saliency, net_compress, crit, cfg)
+        segmentation_module = DeformSegmentationModule(segmentation_model, net_saliency, net_compress, crit, cfg)
 
 
 
 
     ###============== SET UP OPTIMIZERS ===========###
-    nets = (net_encoder, net_decoder, crit, net_saliency, net_compress)
+    #nets = (net_encoder, net_decoder, crit, net_saliency, net_compress)
+    nets = (segmentation_model, crit, net_saliency, net_compress)
     optimizers = create_optimizers(nets, cfg)
 
     ###============== LOAD NETS INTO GPUs ===========###
@@ -454,7 +515,8 @@ def main(cfg, gpus):
         history['save']['val_iou_deformed_class_'+str(c)] = []
         history['save']['val_iou_y_reverse_class_'+str(c)] = []
     if cfg.TRAIN.start_epoch > 0:
-        history_previous_epoches = pd.read_csv('{}/history_epoch_{}.csv'.format(cfg.DIR, cfg.TRAIN.start_epoch))
+        # history_previous_epoches = pd.read_csv('{}/history_epoch_{}.csv'.format(cfg.DIR, cfg.TRAIN.start_epoch))
+        history_previous_epoches = pd.read_csv('{}/history_epoch_last.csv'.format(cfg.DIR))
         history['save']['epoch'] = list(history_previous_epoches['epoch'])
         history['save']['train_loss'] = list(history_previous_epoches['train_loss'])
         if cfg.TRAIN.deform_joint_loss:
@@ -697,14 +759,25 @@ if __name__ == '__main__':
 
     # Start from checkpoint
     if cfg.TRAIN.start_epoch > 0:
-        cfg.MODEL.weights_encoder = os.path.join(
-            cfg.DIR, 'encoder_epoch_{}.pth'.format(cfg.TRAIN.start_epoch))
-        cfg.MODEL.weights_decoder = os.path.join(
-            cfg.DIR, 'decoder_epoch_{}.pth'.format(cfg.TRAIN.start_epoch))
-        assert os.path.exists(cfg.MODEL.weights_encoder) and \
-            os.path.exists(cfg.MODEL.weights_decoder), "checkpoint does not exitst!"
+        # cfg.MODEL.weights_encoder = os.path.join(
+        #     cfg.DIR, 'encoder_epoch_{}.pth'.format(cfg.TRAIN.start_epoch))
+        
+        # cfg.MODEL.weights_decoder = os.path.join(
+        #     cfg.DIR, 'decoder_epoch_{}.pth'.format(cfg.TRAIN.start_epoch))
+
+        # assert os.path.exists(cfg.MODEL.weights_encoder) and \
+        #     os.path.exists(cfg.MODEL.weights_decoder), "checkpoint does not exitst!"
+    
+        
+        cfg.MODEL.weights_segmentation_model = os.path.join(
+            cfg.DIR, 'segmentation_model_epoch_last.pth')
+        
+        assert os.path.exists(cfg.MODEL.weights_segmentation_model), "checkpoint does not exitst!"
+        
         cfg.MODEL.weights_net_saliency = os.path.join(
-            cfg.DIR, 'saliency_epoch_{}.pth'.format(cfg.TRAIN.start_epoch))
+            #cfg.DIR, 'saliency_epoch_{}.pth'.format(cfg.TRAIN.start_epoch))
+            cfg.DIR, 'saliency_epoch_last.pth')
+        
         assert os.path.exists(cfg.MODEL.weights_net_saliency), "checkpoint does not exitst!"
 
     # Parse gpu ids
@@ -715,8 +788,10 @@ if __name__ == '__main__':
     cfg.TRAIN.batch_size = num_gpus * cfg.TRAIN.batch_size_per_gpu
 
     cfg.TRAIN.max_iters = cfg.TRAIN.epoch_iters * cfg.TRAIN.num_epoch
-    cfg.TRAIN.running_lr_encoder = cfg.TRAIN.lr_encoder
-    cfg.TRAIN.running_lr_decoder = cfg.TRAIN.lr_decoder
+    # cfg.TRAIN.running_lr_encoder = cfg.TRAIN.lr_encoder
+    # cfg.TRAIN.running_lr_decoder = cfg.TRAIN.lr_decoder
+    cfg.TRAIN.running_lr_segmentation_model = cfg.TRAIN.lr_segmentation_model
+   
 
     random.seed(cfg.TRAIN.seed) # Python
     torch.manual_seed(cfg.TRAIN.seed) # pytorch cpu vars
