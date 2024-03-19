@@ -4,6 +4,10 @@ This is a PyTorch implementation of [Learning to Downsample for Segmentation of 
 
 Reference: https://github.com/lxasqjc/Deformation-Segmentation
 
+## Training
+
+## Testing
+
 ## Citation
 
 ```
